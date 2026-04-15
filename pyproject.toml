@@ -1,0 +1,12 @@
+[project]
+name = "hgwbot"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiogram>=3.27.0",
+    "aiosqlite>=0.22.1",
+    "dotenv>=0.9.9",
+    "pymorphy3>=2.0.6",
+]
