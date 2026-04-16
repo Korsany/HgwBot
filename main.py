@@ -12,7 +12,7 @@ from core.middleware import CoreMiddleware
 from database.db import init_db
 from utils.dictionaries import load_dictionaries
 from utils.helpers import setup_bot_commands, backup_scheduler
-from handlers import commands, proposals, admin, decipher
+from handlers import commands, proposals, admin, decipher, potions
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,7 @@ def create_dispatcher() -> Dispatcher:
     router.include_router(commands.router)
     router.include_router(proposals.router)
     router.include_router(admin.router)
+    router.include_router(potions.router)
     router.include_router(decipher.router)
 
     dp.include_router(router)

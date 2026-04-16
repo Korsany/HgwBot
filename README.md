@@ -10,16 +10,17 @@ HgwBot/
 ├── core/                   # Ядро приложения
 │   ├── config.py          # Конфигурация, константы, регулярные выражения
 │   ├── middleware.py      # Middleware для обработки пользователей
-│   └── states.py          # FSM состояния для редакторов
+│   └── states.py          # FSM состояния для редакторов и зелий
 ├── database/              # Работа с базой данных
 │   └── db.py             # Инициализация БД, функции доступа
 ├── handlers/              # Обработчики команд и сообщений
 │   ├── commands.py       # /start, /profile
 │   ├── proposals.py      # /new и модерация предложений
 │   ├── admin.py          # /admin и редакторы слов/эмодзи
+│   ├── potions.py        # /potions - дневник зелий
 │   └── decipher.py       # Основной дешифратор сообщений
 ├── keyboards/             # Inline-клавиатуры
-│   └── __init__.py       # Фабрики клавиатур для модерации и редакторов
+│   └── __init__.py       # Фабрики клавиатур для модерации, редакторов и зелий
 ├── utils/                 # Вспомогательные утилиты
 │   ├── helpers.py        # Команды бота, загрузка логов, бэкап
 │   └── dictionaries.py   # Загрузка и управление словарями
@@ -68,6 +69,25 @@ HgwBot/
 
 **Используемые настройки:**
 - `admin_group` - ID группы для модерации и уведомлений
+
+### Таблица `potions`
+Хранит рецепты зелий.
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | ID зелья |
+| `name` | TEXT | Название зелья |
+| `ingredients` | TEXT | Ингредиенты и их количество |
+| `quality` | TEXT | Качество зелья (❌🍀, ⚖️, ✨) |
+| `added_by` | INTEGER | Telegram ID автора |
+| `created_at` | TEXT | Дата и время добавления |
+
+### Таблица `potion_access`
+Управление доступом к системе зелий.
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `user_id` | INTEGER PRIMARY KEY | Telegram ID пользователя с доступом |
 
 ## Основные модули
 
@@ -147,6 +167,9 @@ HgwBot/
 - `/admin set_limit [id] [число]` - Изменить лимит (только владелец)
 - `/admin ban [id]` - Забанить (только владелец)
 - `/admin unban [id]` - Разбанить (только владелец)
+- `/admin potion_add [id]` - Дать доступ к зельям (только владелец)
+- `/admin potion_remove [id]` - Убрать доступ к зельям (только владелец)
+- `/admin potion_list` - Список пользователей с доступом к зельям (только владелец)
 
 **Callback данные:**
 - `ew_pg_{page}` - Переключение страницы слов
@@ -155,6 +178,38 @@ HgwBot/
 - `ee_pg_{page}` - Переключение страницы эмодзи
 - `ee_srch` - Поиск эмодзи
 - `ee_del_{emoji}` - Удалить эмодзи
+
+### `handlers/potions.py`
+**Функции:**
+- `cmd_potions(message, user, db)` - Команда /potions - открыть дневник зелий
+- `has_potion_access(db, user_id)` → bool - Проверка доступа к системе зелий
+- `send_potions_list(target, page, db, query)` - Отправка списка зелий с пагинацией
+- `potions_callback(call, state, db, user)` - Обработка всех callback'ов зелий
+- `add_potion_name(message, state)` - Получение названия зелья
+- `add_potion_ingredients(message, state)` - Получение ингредиентов
+- `search_potion_result(message, state, db)` - Результат поиска зелий
+
+**Callback данные:**
+- `pot_pg_{page}` - Переключение страницы
+- `pot_add` - Добавить новое зелье
+- `pot_srch` - Поиск зелья
+- `pot_view_{id}` - Просмотр детальной информации
+- `pot_del_{id}` - Удалить зелье
+- `pot_back` - Вернуться к списку
+- `pot_cancel` - Отменить добавление
+- `pot_q_{quality}` - Выбор качества зелья
+
+**Ингредиенты:**
+- луноросянка
+- кристалл лунного камня
+- пыльца визгоплюща
+- серебристая слизь лукотруса
+- нить акромантула
+- шип гиппогрифа
+- пепельный мох
+- копытная стружка фестрала
+- порошок рога двурога
+- желчь болотной жабы
 
 ### `handlers/decipher.py`
 **Функции:**
@@ -193,6 +248,9 @@ HgwBot/
 - `get_moderation_keyboard(prop_id)` → InlineKeyboardMarkup - Клавиатура модерации
 - `get_words_editor_keyboard(words, page, total_items, per_page, query)` → InlineKeyboardMarkup
 - `get_emoji_editor_keyboard(items, page, total_items, per_page, query)` → InlineKeyboardMarkup
+- `get_potions_keyboard(potions, page, total_items, per_page, query)` → InlineKeyboardMarkup - Список зелий
+- `get_potion_detail_keyboard(potion_id)` → InlineKeyboardMarkup - Детальный просмотр зелья
+- `get_quality_keyboard()` → InlineKeyboardMarkup - Выбор качества зелья
 
 ## Алгоритм дешифровки анаграмм
 

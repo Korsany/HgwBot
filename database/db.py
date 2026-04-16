@@ -44,6 +44,24 @@ async def init_db():
         await db.execute(
             "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
         )
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS potions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                ingredients TEXT NOT NULL,
+                quality TEXT NOT NULL,
+                added_by INTEGER,
+                created_at TEXT
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS potion_access (
+                user_id INTEGER PRIMARY KEY
+            )
+        """)
+
         await db.commit()
 
 

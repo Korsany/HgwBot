@@ -67,7 +67,11 @@ async def cmd_admin(message: Message, command, user: dict, db):
                 "• <code>/admin set_admin [id] [0/1]</code> — Назначить/Снять админа\n"
                 "• <code>/admin set_limit [id] [число]</code> — Изменить лимит\n"
                 "• <code>/admin ban [id]</code> — Бан\n"
-                "• <code>/admin unban [id]</code> — Разбан"
+                "• <code>/admin unban [id]</code> — Разбан\n\n"
+                "<b>Зелья:</b>\n"
+                "• <code>/admin potion_add [id]</code> — Дать доступ к зельям\n"
+                "• <code>/admin potion_remove [id]</code> — Убрать доступ\n"
+                "• <code>/admin potion_list</code> — Список пользователей с доступом"
             )
 
         return await message.answer(help_text)
@@ -167,6 +171,46 @@ async def cmd_admin(message: Message, command, user: dict, db):
                 logger.info(f"Пользователь {target_id} разбанен")
             except ValueError:
                 await message.answer("ID должен быть числом.")
+
+        elif sub == "potion_add" and len(args) == 2:
+            try:
+                target_id = int(args[1])
+                await db.execute(
+                    "INSERT OR IGNORE INTO potion_access (user_id) VALUES (?)",
+                    (target_id,),
+                )
+                await db.commit()
+                await message.answer(
+                    f"Пользователю <code>{target_id}</code> выдан доступ к зельям."
+                )
+                logger.info(f"Доступ к зельям выдан пользователю {target_id}")
+            except ValueError:
+                await message.answer("ID должен быть числом.")
+
+        elif sub == "potion_remove" and len(args) == 2:
+            try:
+                target_id = int(args[1])
+                await db.execute(
+                    "DELETE FROM potion_access WHERE user_id = ?", (target_id,)
+                )
+                await db.commit()
+                await message.answer(
+                    f"У пользователя <code>{target_id}</code> убран доступ к зельям."
+                )
+                logger.info(f"Доступ к зельям убран у пользователя {target_id}")
+            except ValueError:
+                await message.answer("ID должен быть числом.")
+
+        elif sub == "potion_list":
+            async with db.execute("SELECT user_id FROM potion_access") as cursor:
+                users = await cursor.fetchall()
+            if users:
+                user_list = "\n".join(f"• <code>{u[0]}</code>" for u in users)
+                await message.answer(
+                    f"<b>Пользователи с доступом к зельям:</b>\n{user_list}"
+                )
+            else:
+                await message.answer("Нет пользователей с доступом к зельям.")
 
 
 async def send_words_editor(target, page: int, query: str = None):
