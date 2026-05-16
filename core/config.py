@@ -18,6 +18,7 @@ BACKUP_INTERVAL_SECONDS = 86400
 BASE_WORDS_FILE = Path("lib.txt")
 USER_WORDS_FILE = Path("ulib.txt")
 USER_EMOJI_FILE = Path("slib.txt")
+USER_PHRASES_FILE = Path("plib.txt")
 
 RE_WORD = re.compile(r"[а-яёa-z]+(?:-[а-яёa-z]+)*", re.IGNORECASE)
 RE_CLEAN = re.compile(r"[^а-яёa-z-]", re.IGNORECASE)

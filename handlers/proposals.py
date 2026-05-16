@@ -8,13 +8,16 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from core.config import RE_WORD, USER_WORDS_FILE
+from core.config import RE_WORD, RE_HAS_LETTERS, USER_WORDS_FILE, USER_PHRASES_FILE
 from database.db import get_admin_group
 from utils.dictionaries import (
     STORAGE,
     EMOJI_STORAGE,
+    PHRASE_STORAGE,
     parse_and_add_word,
     sync_emoji_file,
+    add_phrase,
+    sync_phrases_file,
 )
 from keyboards import get_moderation_keyboard
 
@@ -40,28 +43,51 @@ async def cmd_new(message: Message, bot, db, user: dict):
     user_info = f"{message.from_user.full_name} (ID: {message.from_user.id})"
 
     if "\n" in raw_text:
-        emojis, desc = raw_text.split("\n", 1)
-        clean_emojis, desc = emojis.strip().replace(" ", ""), desc.strip().title()
+        first_line, desc = raw_text.split("\n", 1)
+        first_line, desc = first_line.strip(), desc.strip().title()
 
-        if clean_emojis in EMOJI_STORAGE:
-            return await message.answer(
-                f"Этот ребус уже есть в базе.\nОтвет: <code>{EMOJI_STORAGE[clean_emojis]}</code>"
+        if RE_HAS_LETTERS.search(first_line):
+            if desc.lower() in PHRASE_STORAGE:
+                return await message.answer(
+                    f"Эта фраза уже есть в базе: <code>{desc}</code>"
+                )
+
+            cursor = await db.execute(
+                "INSERT INTO proposals (type, content, description, user_id) VALUES (?,?,?,?)",
+                ("phrase", first_line, desc, message.from_user.id),
             )
+            prop_id = cursor.lastrowid
+            await db.commit()
 
-        cursor = await db.execute(
-            "INSERT INTO proposals (type, content, description, user_id) VALUES (?,?,?,?)",
-            ("emoji", clean_emojis, desc, message.from_user.id),
-        )
-        prop_id = cursor.lastrowid
-        await db.commit()
+            kb = get_moderation_keyboard(prop_id)
+            await bot.send_message(
+                admin_chat,
+                f"<b>Новая предложка (фраза)</b>\nОт: {user_info}\n\nАнаграмма: {first_line}\nОтвет: {desc}",
+                reply_markup=kb,
+            )
+            await message.answer("Фраза отправлена на модерацию.")
+        else:
+            clean_emojis = first_line.replace(" ", "")
 
-        kb = get_moderation_keyboard(prop_id)
-        await bot.send_message(
-            admin_chat,
-            f"<b>Новая предложка (эмодзи)</b>\nОт: {user_info}\n\nЭмодзи: {clean_emojis}\nОтвет: {desc}",
-            reply_markup=kb,
-        )
-        await message.answer("Ребус отправлен на модерацию.")
+            if clean_emojis in EMOJI_STORAGE:
+                return await message.answer(
+                    f"Этот ребус уже есть в базе.\nОтвет: <code>{EMOJI_STORAGE[clean_emojis]}</code>"
+                )
+
+            cursor = await db.execute(
+                "INSERT INTO proposals (type, content, description, user_id) VALUES (?,?,?,?)",
+                ("emoji", clean_emojis, desc, message.from_user.id),
+            )
+            prop_id = cursor.lastrowid
+            await db.commit()
+
+            kb = get_moderation_keyboard(prop_id)
+            await bot.send_message(
+                admin_chat,
+                f"<b>Новая предложка (эмодзи)</b>\nОт: {user_info}\n\nЭмодзи: {clean_emojis}\nОтвет: {desc}",
+                reply_markup=kb,
+            )
+            await message.answer("Ребус отправлен на модерацию.")
 
     else:
         words = RE_WORD.findall(raw_text.lower())
@@ -132,6 +158,22 @@ async def moderation_cb(call: CallbackQuery, db, bot):
             )
             notify_text = f"Слово <code>{content}</code> добавлено в словарь."
             logger.info(f"Одобрено слово: {content} от пользователя {author_id}")
+        elif prop_type == "phrase":
+            add_phrase(desc)
+            await sync_phrases_file()
+
+            try:
+                author = await bot.get_chat(author_id)
+                author_name = author.first_name
+            except Exception:
+                author_name = "Пользователь"
+
+            success = await _safe_edit_text(
+                call.message,
+                f"<b>Одобрена фраза:</b>\n{desc}\n<i>от {author_name}</i>",
+            )
+            notify_text = f"Фраза <code>{desc}</code> добавлена в базу."
+            logger.info(f"Одобрена фраза: {desc} от пользователя {author_id}")
         else:
             EMOJI_STORAGE[content] = desc
             await sync_emoji_file()
