@@ -8,7 +8,7 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from core.config import RE_WORD, RE_HAS_LETTERS, USER_WORDS_FILE, USER_PHRASES_FILE
+from core.config import RE_WORD, USER_WORDS_FILE
 from database.db import get_admin_group
 from utils.dictionaries import (
     STORAGE,
@@ -21,6 +21,8 @@ from utils.dictionaries import (
 )
 from keyboards import get_moderation_keyboard
 
+_PHRASE_PREFIXES = ("ф ", "фраза ")
+
 logger = logging.getLogger(__name__)
 
 router = Router()
@@ -31,7 +33,12 @@ async def cmd_new(message: Message, bot, db, user: dict):
     raw_text = message.text[4:].strip()
     if not raw_text:
         return await message.answer(
-            "<b>Формат использования:</b>\n/new слово1 слово2\n<i>ИЛИ</i>\n/new 🍎🦊\nЛиса с яблоком"
+            "<b>Формат использования:</b>\n"
+            "/new слово1 слово2\n"
+            "<i>ИЛИ</i>\n"
+            "/new 🍎🦊\nЛиса с яблоком\n"
+            "<i>ИЛИ</i>\n"
+            "/new ф Погода Стоит На Редкость Удачная"
         )
 
     admin_chat = await get_admin_group()
@@ -42,52 +49,64 @@ async def cmd_new(message: Message, bot, db, user: dict):
 
     user_info = f"{message.from_user.full_name} (ID: {message.from_user.id})"
 
-    if "\n" in raw_text:
-        first_line, desc = raw_text.split("\n", 1)
-        first_line, desc = first_line.strip(), desc.strip().title()
+    raw_lower = raw_text.lower()
+    is_phrase = False
+    for prefix in _PHRASE_PREFIXES:
+        if raw_lower.startswith(prefix):
+            is_phrase = True
+            phrase_text = raw_text[len(prefix):].strip().title()
+            break
 
-        if RE_HAS_LETTERS.search(first_line):
-            if desc.lower() in PHRASE_STORAGE:
-                return await message.answer(
-                    f"Эта фраза уже есть в базе: <code>{desc}</code>"
-                )
-
-            cursor = await db.execute(
-                "INSERT INTO proposals (type, content, description, user_id) VALUES (?,?,?,?)",
-                ("phrase", first_line, desc, message.from_user.id),
+    if is_phrase:
+        if not phrase_text:
+            return await message.answer(
+                "Укажите фразу после <code>ф</code>.\n"
+                "Пример: <code>/new ф Погода Стоит На Редкость Удачная</code>"
             )
-            prop_id = cursor.lastrowid
-            await db.commit()
 
-            kb = get_moderation_keyboard(prop_id)
-            await bot.send_message(
-                admin_chat,
-                f"<b>Новая предложка (фраза)</b>\nОт: {user_info}\n\nАнаграмма: {first_line}\nОтвет: {desc}",
-                reply_markup=kb,
+        if phrase_text.lower() in PHRASE_STORAGE:
+            return await message.answer(
+                f"Эта фраза уже есть в базе: <code>{phrase_text}</code>"
             )
-            await message.answer("Фраза отправлена на модерацию.")
-        else:
-            clean_emojis = first_line.replace(" ", "")
 
-            if clean_emojis in EMOJI_STORAGE:
-                return await message.answer(
-                    f"Этот ребус уже есть в базе.\nОтвет: <code>{EMOJI_STORAGE[clean_emojis]}</code>"
-                )
+        cursor = await db.execute(
+            "INSERT INTO proposals (type, content, description, user_id) VALUES (?,?,?,?)",
+            ("phrase", phrase_text, phrase_text, message.from_user.id),
+        )
+        prop_id = cursor.lastrowid
+        await db.commit()
 
-            cursor = await db.execute(
-                "INSERT INTO proposals (type, content, description, user_id) VALUES (?,?,?,?)",
-                ("emoji", clean_emojis, desc, message.from_user.id),
+        kb = get_moderation_keyboard(prop_id)
+        await bot.send_message(
+            admin_chat,
+            f"<b>Новая предложка (фраза)</b>\nОт: {user_info}\n\nФраза: {phrase_text}",
+            reply_markup=kb,
+        )
+        await message.answer("Фраза отправлена на модерацию.")
+
+    elif "\n" in raw_text:
+        emojis, desc = raw_text.split("\n", 1)
+        clean_emojis, desc = emojis.strip().replace(" ", ""), desc.strip().title()
+
+        if clean_emojis in EMOJI_STORAGE:
+            return await message.answer(
+                f"Этот ребус уже есть в базе.\nОтвет: <code>{EMOJI_STORAGE[clean_emojis]}</code>"
             )
-            prop_id = cursor.lastrowid
-            await db.commit()
 
-            kb = get_moderation_keyboard(prop_id)
-            await bot.send_message(
-                admin_chat,
-                f"<b>Новая предложка (эмодзи)</b>\nОт: {user_info}\n\nЭмодзи: {clean_emojis}\nОтвет: {desc}",
-                reply_markup=kb,
-            )
-            await message.answer("Ребус отправлен на модерацию.")
+        cursor = await db.execute(
+            "INSERT INTO proposals (type, content, description, user_id) VALUES (?,?,?,?)",
+            ("emoji", clean_emojis, desc, message.from_user.id),
+        )
+        prop_id = cursor.lastrowid
+        await db.commit()
+
+        kb = get_moderation_keyboard(prop_id)
+        await bot.send_message(
+            admin_chat,
+            f"<b>Новая предложка (эмодзи)</b>\nОт: {user_info}\n\nЭмодзи: {clean_emojis}\nОтвет: {desc}",
+            reply_markup=kb,
+        )
+        await message.answer("Ребус отправлен на модерацию.")
 
     else:
         words = RE_WORD.findall(raw_text.lower())
@@ -159,7 +178,7 @@ async def moderation_cb(call: CallbackQuery, db, bot):
             notify_text = f"Слово <code>{content}</code> добавлено в словарь."
             logger.info(f"Одобрено слово: {content} от пользователя {author_id}")
         elif prop_type == "phrase":
-            add_phrase(desc)
+            add_phrase(content)
             await sync_phrases_file()
 
             try:
@@ -170,10 +189,10 @@ async def moderation_cb(call: CallbackQuery, db, bot):
 
             success = await _safe_edit_text(
                 call.message,
-                f"<b>Одобрена фраза:</b>\n{desc}\n<i>от {author_name}</i>",
+                f"<b>Одобрена фраза:</b>\n{content}\n<i>от {author_name}</i>",
             )
-            notify_text = f"Фраза <code>{desc}</code> добавлена в базу."
-            logger.info(f"Одобрена фраза: {desc} от пользователя {author_id}")
+            notify_text = f"Фраза <code>{content}</code> добавлена в базу."
+            logger.info(f"Одобрена фраза: {content} от пользователя {author_id}")
         else:
             EMOJI_STORAGE[content] = desc
             await sync_emoji_file()
