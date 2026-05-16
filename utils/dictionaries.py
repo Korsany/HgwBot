@@ -3,13 +3,14 @@ import logging
 import aiofiles
 import pymorphy3
 
-from core.config import BASE_WORDS_FILE, USER_WORDS_FILE, USER_EMOJI_FILE, RE_WORD
+from core.config import BASE_WORDS_FILE, USER_WORDS_FILE, USER_EMOJI_FILE, USER_PHRASES_FILE, RE_WORD
 
 STORAGE = {}
 ALL_WORDS_LIST = []
 EMOJI_STORAGE = {}
 PHRASE_STORAGE = set()  # Хранилище целых строк из lib.txt
 PHRASE_ANAGRAM_MAP = {}  # Ключ: отсортированные буквы фразы -> значение: оригинальная фраза
+USER_PHRASES = set()  # Пользовательские фразы (из plib.txt)
 
 morph = pymorphy3.MorphAnalyzer()
 
@@ -42,6 +43,30 @@ def parse_and_add_word(seed: str, seen_words_set: set = None):
         ALL_WORDS_LIST.sort()
 
 
+def add_phrase(phrase: str):
+    lower = phrase.strip().lower()
+    if not lower:
+        return
+    PHRASE_STORAGE.add(lower)
+    phrase_key = "".join(sorted([c for c in lower if c.isalpha()]))
+    PHRASE_ANAGRAM_MAP[phrase_key] = lower
+    USER_PHRASES.add(phrase.strip())
+    seen = set(ALL_WORDS_LIST)
+    seeds = RE_WORD.findall(lower)
+    for seed in seeds:
+        parse_and_add_word(seed, seen)
+    new_words = sorted(seen - set(ALL_WORDS_LIST))
+    if new_words:
+        ALL_WORDS_LIST.extend(new_words)
+        ALL_WORDS_LIST.sort()
+
+
+async def sync_phrases_file():
+    async with aiofiles.open(USER_PHRASES_FILE, mode="w", encoding="utf-8") as f:
+        for phrase in sorted(USER_PHRASES):
+            await f.write(f"{phrase}\n")
+
+
 async def load_dictionaries():
     global STORAGE, ALL_WORDS_LIST, EMOJI_STORAGE, PHRASE_STORAGE, PHRASE_ANAGRAM_MAP
     STORAGE.clear()
@@ -49,9 +74,11 @@ async def load_dictionaries():
     EMOJI_STORAGE.clear()
     PHRASE_STORAGE.clear()
     PHRASE_ANAGRAM_MAP.clear()
+    USER_PHRASES.clear()
 
     USER_WORDS_FILE.touch(exist_ok=True)
     USER_EMOJI_FILE.touch(exist_ok=True)
+    USER_PHRASES_FILE.touch(exist_ok=True)
 
     seen_words = set()
 
@@ -80,6 +107,22 @@ async def load_dictionaries():
             seeds = RE_WORD.findall(content.lower())
             for seed in seeds:
                 parse_and_add_word(seed, seen_words)
+
+    # Загружаем plib.txt как фразы (аналогично lib.txt)
+    if USER_PHRASES_FILE.exists():
+        async with aiofiles.open(USER_PHRASES_FILE, mode="r", encoding="utf-8") as f:
+            async for line in f:
+                line = line.strip()
+                if line:
+                    USER_PHRASES.add(line)
+                    PHRASE_STORAGE.add(line.lower())
+                    phrase_key = "".join(
+                        sorted([c for c in line.lower() if c.isalpha()])
+                    )
+                    PHRASE_ANAGRAM_MAP[phrase_key] = line.lower()
+                    seeds = RE_WORD.findall(line.lower())
+                    for seed in seeds:
+                        parse_and_add_word(seed, seen_words)
 
     ALL_WORDS_LIST = sorted(list(seen_words))
 
